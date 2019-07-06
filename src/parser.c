@@ -837,6 +837,7 @@ network *parse_network_cfg(char *filename)
         }else{
             fprintf(stderr, "Type not recognized: %s\n", s->type);
         }
+	l.index = count;
         l.clip = net->clip;
         l.truth = option_find_int_quiet(options, "truth", 0);
         l.onlyforward = option_find_int_quiet(options, "onlyforward", 0);

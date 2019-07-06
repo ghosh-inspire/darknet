@@ -187,6 +187,8 @@ network *make_network(int n)
 
 void forward_network(network *netp)
 {
+	FILE* fd = NULL;
+	char fname[100] = {0,};
 #ifdef GPU
     if(netp->gpu_index >= 0){
         forward_network_gpu(netp);   
@@ -198,11 +200,25 @@ void forward_network(network *netp)
     for(i = 0; i < net.n; ++i){
         net.index = i;
         layer l = net.layers[i];
+	sprintf(fname, "./layer_%d_out.txt", l.index);
         if(l.delta){
             fill_cpu(l.outputs * l.batch, 0, l.delta, 1);
         }
         l.forward(l, net);
         net.input = l.output;
+#if 1
+        if(i == 9) {
+		fd = fopen(fname,"w");
+                if(NULL != fd) {
+	    		fwrite(l.output,sizeof(float),l.outputs,fd);
+                        fclose(fd);
+                }
+                else {
+                        printf("file could not be openned!!\n");
+                }
+        }
+	//printf("idx: %d out_h: %d out_w: %d out_c: %d\n", l.index, l.out_h,l.out_w,l.out_c);
+#endif
         if(l.truth) {
             net.truth = l.output;
         }
