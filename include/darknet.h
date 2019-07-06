@@ -58,20 +58,20 @@ typedef enum{
 } BINARY_ACTIVATION;
 
 typedef enum {
-    CONVOLUTIONAL,
+    CONVOLUTIONAL, //0
     DECONVOLUTIONAL,
     CONNECTED,
-    MAXPOOL,
+    MAXPOOL, //3
     SOFTMAX,
     DETECTION,
     DROPOUT,
     CROP,
-    ROUTE,
+    ROUTE, //8
     COST,
     NORMALIZATION,
     AVGPOOL,
     LOCAL,
-    SHORTCUT,
+    SHORTCUT, //13
     ACTIVE,
     RNN,
     GRU,
@@ -81,10 +81,10 @@ typedef enum {
     NETWORK,
     XNOR,
     REGION,
-    YOLO,
+    YOLO, //23
     ISEG,
     REORG,
-    UPSAMPLE,
+    UPSAMPLE, //26
     LOGXENT,
     L2NORM,
     BLANK
@@ -135,7 +135,7 @@ struct layer{
     int truths;
     int h,w,c;
     int out_h, out_w, out_c;
-    int n;
+    int n; //number of filters, like 16 etc.
     int max_boxes;
     int groups;
     int size;
