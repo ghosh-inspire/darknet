@@ -6,6 +6,8 @@
 #include "data.h"
 #include "utils.h"
 #include "blas.h"
+#include "demo.h"
+#include <sys/file.h>
 
 #include "crop_layer.h"
 #include "connected_layer.h"
@@ -189,7 +191,6 @@ network *make_network(int n)
 
 void forward_network(network *netp)
 {
-	FILE* fd = NULL;
 #ifdef GPU
     if(netp->gpu_index >= 0){
         forward_network_gpu(netp);   
@@ -207,17 +208,18 @@ void forward_network(network *netp)
         l.forward(l, net);
         net.input = l.output;
 #if 1
+	int ret = flock(fileno(darknet_fd), LOCK_EX);
         if(i == EXIT_LAYER) {
-		fd = fopen("layer_out.txt","w");
-                if(NULL != fd) {
-	    		fwrite(l.output,sizeof(float),l.outputs,fd);
-                        fclose(fd);
+                if(!ret) {
+			fseek(darknet_fd, 0, SEEK_SET);
+	    		fwrite(l.output,sizeof(float),l.outputs,darknet_fd);
+			flock(fileno(darknet_fd), LOCK_UN);
                 }
                 else {
-                        printf("file could not be openned!!\n");
+                        printf("file could not be locked!! %d\n", ret);
                 }
+		//printf("idx: %d out_h: %d out_w: %d out_c: %d\n", l.index, l.out_h,l.out_w,l.out_c);
         }
-	//printf("idx: %d out_h: %d out_w: %d out_c: %d\n", l.index, l.out_h,l.out_w,l.out_c);
 #endif
         if(l.truth) {
             net.truth = l.output;

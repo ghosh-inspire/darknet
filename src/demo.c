@@ -91,6 +91,12 @@ void *detect_in_thread(void *ptr)
     float *X = buff_letter[(buff_index+2)%3].data;
     network_predict(net, X);
 
+    printf("\033[2J");
+    printf("\033[1;1H");
+    printf("\nFPS:%.1f\n",fps);
+
+#ifndef DEVICE_CODE
+#error "this error should not come"
     /*
        if(l.type == DETECTION){
        get_detection_boxes(l, 1, 1, demo_thresh, probs, boxes, 0);
@@ -99,7 +105,6 @@ void *detect_in_thread(void *ptr)
     detection *dets = 0;
     int nboxes = 0;
     dets = avg_predictions(net, &nboxes);
-
 
     /*
        int i,j;
@@ -133,6 +138,7 @@ void *detect_in_thread(void *ptr)
     free_detections(dets, nboxes);
 
     demo_index = (demo_index + 1)%demo_frame;
+#endif
     running = 0;
     return 0;
 }
@@ -184,6 +190,9 @@ void *detect_loop(void *ptr)
     }
 }
 
+
+FILE * darknet_fd = NULL;
+
 void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, int classes, int delay, char *prefix, int avg_frames, float hier, int w, int h, int frames, int fullscreen)
 {
     //demo_frame = avg_frames;
@@ -232,6 +241,14 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 
     demo_time = what_time_is_it_now();
 
+    printf("%s: Demo going into loop\n", __func__);
+    darknet_fd = fopen("layer_out.txt", "w+");
+
+    if(NULL == darknet_fd) {
+	printf("FILE OPEN ERROR\n");
+	return;
+    }
+
     while(!demo_done){
         buff_index = (buff_index + 1) %3;
         if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
@@ -239,7 +256,9 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
         if(!prefix){
             fps = 1./(what_time_is_it_now() - demo_time);
             demo_time = what_time_is_it_now();
+#ifndef DEVICE_CODE
             display_in_thread(0);
+#endif
         }else{
             char name[256];
             sprintf(name, "%s_%08d", prefix, count);
@@ -249,6 +268,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
         pthread_join(detect_thread, 0);
         ++count;
     }
+    fclose(darknet_fd);
 }
 
 /*

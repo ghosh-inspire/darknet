@@ -1,6 +1,6 @@
 GPU=0
 CUDNN=0
-OPENCV=0
+OPENCV=1
 OPENMP=0
 DEBUG=0
 
@@ -41,7 +41,7 @@ CFLAGS+=$(OPTS)
 
 ifeq ($(OPENCV), 1) 
 COMMON+= -DOPENCV
-CFLAGS+= -DOPENCV
+CFLAGS+= -DOPENCV -DDEVICE_CODE
 LDFLAGS+= `pkg-config --libs opencv` -lstdc++
 COMMON+= `pkg-config --cflags opencv` 
 endif
