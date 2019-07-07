@@ -185,10 +185,11 @@ network *make_network(int n)
     return net;
 }
 
+#define EXIT_LAYER	9
+
 void forward_network(network *netp)
 {
 	FILE* fd = NULL;
-	char fname[100] = {0,};
 #ifdef GPU
     if(netp->gpu_index >= 0){
         forward_network_gpu(netp);   
@@ -200,15 +201,14 @@ void forward_network(network *netp)
     for(i = 0; i < net.n; ++i){
         net.index = i;
         layer l = net.layers[i];
-	sprintf(fname, "./layer_%d_out.txt", l.index);
         if(l.delta){
             fill_cpu(l.outputs * l.batch, 0, l.delta, 1);
         }
         l.forward(l, net);
         net.input = l.output;
 #if 1
-        if(i == 9) {
-		fd = fopen(fname,"w");
+        if(i == EXIT_LAYER) {
+		fd = fopen("layer_out.txt","w");
                 if(NULL != fd) {
 	    		fwrite(l.output,sizeof(float),l.outputs,fd);
                         fclose(fd);
