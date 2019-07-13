@@ -1,0 +1,6 @@
+classes=10
+train  = /lyceum/sg1g18/data/cifar/train.list
+valid  = /lyceum/sg1g18/data/cifar/test.list
+labels = /lyceum/sg1g18/data/cifar/labels.txt
+backup = backup/
+top=2
