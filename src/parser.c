@@ -863,10 +863,12 @@ network *parse_network_cfg(char *filename)
     }
     free_list(sections);
     layer out = get_network_output_layer(net);
+    layer out1 = get_network_outputn_layer(net, 1);
     net->outputs = out.outputs;
     net->truths = out.outputs;
     if(net->layers[net->n-1].truths) net->truths = net->layers[net->n-1].truths;
     net->output = out.output;
+    net->output1 = out1.output;
     net->input = calloc(net->inputs*net->batch, sizeof(float));
     net->truth = calloc(net->truths*net->batch, sizeof(float));
 #ifdef GPU

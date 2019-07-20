@@ -696,6 +696,26 @@ float *network_accuracies(network *net, data d, int n)
     return acc;
 }
 
+layer get_network_outputn_layer(network *net, int exit)
+{
+    int i, count = 0;
+    for(i = net->n - 1; i >= 0; --i){
+        if(net->layers[i].type == SOFTMAX){
+	        printf("%s idx: %d net->layers[i].type: %d", __func__, i, net->layers[i].type);
+            if(count == exit) {
+                printf(" exit\n");
+                break;
+            } else {
+                count++;
+				printf("\n");
+            }
+        }
+    }
+	printf("\n");
+
+    return net->layers[i];
+}
+
 layer get_network_output_layer(network *net)
 {
     int i;
@@ -1123,6 +1143,9 @@ float train_networks(network **nets, int n, data d, int interval)
 void pull_network_output(network *net)
 {
     layer l = get_network_output_layer(net);
+    cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);
+
+    l = get_network_outputn_layer(net, 1);
     cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);
 }
 

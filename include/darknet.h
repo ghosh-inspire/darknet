@@ -436,6 +436,7 @@ typedef struct network{
     int subdivisions;
     layer *layers;
     float *output;
+    float *output1;
     learning_rate_policy policy;
 
     float learning_rate;
@@ -716,6 +717,7 @@ size_t get_current_batch(network *net);
 void constrain_image(image im);
 image get_network_image_layer(network *net, int i);
 layer get_network_output_layer(network *net);
+layer get_network_outputn_layer(network *net, int exit);
 void top_predictions(network *net, int n, int *index);
 void flip_image(image a);
 image float_to_image(int w, int h, int c, float *data);
