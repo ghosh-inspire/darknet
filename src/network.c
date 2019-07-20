@@ -711,7 +711,11 @@ layer get_network_outputn_layer(network *net, int exit)
             }
         }
     }
-	printf("\n");
+
+    if (i <= 0) {
+        printf("no exit found, returning default exit\n");
+        return get_network_output_layer(net);
+    }
 
     return net->layers[i];
 }
