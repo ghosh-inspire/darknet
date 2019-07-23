@@ -555,6 +555,45 @@ void fill_truth(char *path, char **labels, int k, float *truth)
     if(count != 1 && (k != 1 || count != 0)) printf("Too many or too few labels: %d, %s\n", count, path);
 }
 
+void fill_truth_voc(char *path, char **labels, int k, float *truth)
+{
+    int i;
+    memset(truth, 0, k*sizeof(float));
+    int count = 0;
+    char *pth = (char *)malloc(strlen(path));
+    strcpy(pth, path);
+    char *jpgpath = strstr(pth, "JPEGImages");
+    char *namepath = strstr(jpgpath, "/");
+    FILE *fp = NULL;
+    char cls[3] = {'\0', '\0', '\0'};
+
+    *(namepath + strlen(namepath) - 1) = 't';
+    *(namepath + strlen(namepath) - 2) = 'x';
+    *(namepath + strlen(namepath) - 3) = 't';
+    strcpy(jpgpath, "labels");
+    strcat(jpgpath, namepath);
+
+    fp = fopen(pth, "r");
+    if(NULL != fp) {
+    	cls[0] = fgetc(fp);
+    	cls[1] = fgetc(fp);
+    } else {
+	printf("could not open pth: %s\n", pth);
+    }
+    fclose(fp);
+
+    i = atoi(cls);
+    //printf("path: %s num: %d\n", pth, i);
+    if((i <= 19) && (i >= 0)) {
+    	truth[i] = 1;
+	++count;
+    } else
+	printf("programming error in class calc cls = %d\n", i);
+
+    if(count != 1 && (k != 1 || count != 0)) printf("Too many or too few labels: %d, %s\n", count, pth);
+    free(pth);
+}
+
 void fill_hierarchy(float *truth, int k, tree *hierarchy)
 {
     int j;
@@ -622,7 +661,7 @@ matrix load_labels_paths(char **paths, int n, char **labels, int k, tree *hierar
     matrix y = make_matrix(n, k);
     int i;
     for(i = 0; i < n && labels; ++i){
-        fill_truth(paths[i], labels, k, y.vals[i]);
+        fill_truth_voc(paths[i], labels, k, y.vals[i]);
         if(hierarchy){
             fill_hierarchy(y.vals[i], k, hierarchy);
         }

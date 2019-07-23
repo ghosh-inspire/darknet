@@ -701,13 +701,13 @@ layer get_network_outputn_layer(network *net, int exit)
     int i, count = 0;
     for(i = net->n - 1; i >= 0; --i){
         if(net->layers[i].type == SOFTMAX){
-	        printf("%s idx: %d net->layers[i].type: %d", __func__, i, net->layers[i].type);
+	        //printf("%s idx: %d net->layers[i].type: %d", __func__, i, net->layers[i].type);
             if(count == exit) {
-                printf(" exit\n");
+                //printf(" exit\n");
                 break;
             } else {
                 count++;
-				printf("\n");
+		//printf("\n");
             }
         }
     }
