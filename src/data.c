@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "image.h"
 #include "cuda.h"
+#include <assert.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -540,6 +541,59 @@ data load_data_captcha_encode(char **paths, int n, int m, int w, int h)
     return d;
 }
 
+void fill_truth_simple(char *path, int k, int id, float *truth)
+{
+    int i;
+    memset(truth, 0, k*sizeof(float));
+    int count = 0;
+    for(i = 0; i < k; ++i){
+        if(id == i){
+            truth[i] = 1;
+            ++count;
+            //printf("%s %s %d\n", path, labels[i], i);
+        }
+    }
+    if(count != 1 && (k != 1 || count != 0)) printf("Too many or too few labels: %d, %s\n", count, path);
+}
+
+void fill_truth_voc(char *path, char **labels, int k, float *truth)
+{
+    int i;
+    int count = 0;
+    FILE *fp = NULL;
+    char labelpath[4096];
+    char cls[3] = {'\0', '\0', '\0'};
+    memset(truth, 0, k*sizeof(float));
+
+    find_replace(path, "images", "labels", labelpath);
+    find_replace(labelpath, "JPEGImages", "labels", labelpath);
+
+    find_replace(labelpath, "raw", "labels", labelpath);
+    find_replace(labelpath, ".jpg", ".txt", labelpath);
+    find_replace(labelpath, ".png", ".txt", labelpath);
+    find_replace(labelpath, ".JPG", ".txt", labelpath);
+    find_replace(labelpath, ".JPEG", ".txt", labelpath);
+
+    fp = fopen(labelpath, "r");
+    if(NULL != fp) {
+        cls[0] = fgetc(fp);
+        cls[1] = fgetc(fp);
+    } else {
+        printf("could not open pth: %s\n", labelpath);
+    }
+    fclose(fp);
+
+    i = atoi(cls);
+    printf("path: %s num: %d k: %d\n", labelpath, i, k);
+    if((i <= 19) && (i >= 0)) {
+        truth[i] = 1;
+        ++count;
+    } else
+        printf("programming error in class calc cls = %d\n", i);
+
+    if(count != 1 && (k != 1 || count != 0)) printf("Too many or too few labels: %d, %s\n", count, labelpath);
+}
+
 void fill_truth(char *path, char **labels, int k, float *truth)
 {
     int i;
@@ -667,9 +721,11 @@ void free_data(data d)
     if(!d.shallow){
         free_matrix(d.X);
         free_matrix(d.y);
+        free_matrix(d.yn);
     }else{
         free(d.X.vals);
         free(d.y.vals);
+        if(d.yn.vals != d.y.vals) free(d.yn.vals);
     }
 }
 
@@ -1045,6 +1101,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
     d.X.cols = h*w*3;
 
     d.y = make_matrix(n, 5*boxes);
+    d.yn = make_matrix(n, classes);
     for(i = 0; i < n; ++i){
         image orig = load_image_color(random_paths[i], 0, 0);
         image sized = make_image(w, h, orig.c);
@@ -1080,6 +1137,8 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
 
 
         fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
+	fill_truth_simple(random_paths[i], classes, d.y.vals[i][4], d.yn.vals[i]);
+    	//printf("%s: cls: %d %f %f\n", random_paths[i], classes, d.y.vals[i][4], d.yn.vals[i][(int)d.y.vals[i][4]]);
 
         free_image(orig);
     }
@@ -1346,6 +1405,7 @@ data load_data_augment(char **paths, int n, int m, char **labels, int k, tree *h
     d.h=size;
     d.X = load_image_augment_paths(paths, n, min, max, size, angle, aspect, hue, saturation, exposure, center);
     d.y = load_labels_paths(paths, n, labels, k, hierarchy);
+    d.yn = copy_matrix(d.y);
     if(m) free(paths);
     return d;
 }
@@ -1385,6 +1445,7 @@ data concat_data(data d1, data d2)
     d.shallow = 1;
     d.X = concat_matrix(d1.X, d2.X);
     d.y = concat_matrix(d1.y, d2.y);
+    d.yn = concat_matrix(d1.yn, d2.yn);
     d.w = d1.w;
     d.h = d1.h;
     return d;
@@ -1461,8 +1522,12 @@ void get_next_batch(data d, int n, int offset, float *X, float *y)
     int j;
     for(j = 0; j < n; ++j){
         int index = offset + j;
-        memcpy(X+j*d.X.cols, d.X.vals[index], d.X.cols*sizeof(float));
-        if(y) memcpy(y+j*d.y.cols, d.y.vals[index], d.y.cols*sizeof(float));
+        if(X) {
+            memcpy(X+j*d.X.cols, d.X.vals[index], d.X.cols*sizeof(float));
+            if(y) memcpy(y+j*d.y.cols, d.y.vals[index], d.y.cols*sizeof(float));
+        } else {
+            if(y) memcpy(y+j*d.yn.cols, d.yn.vals[index], d.yn.cols*sizeof(float));
+        }
     }
 }
 

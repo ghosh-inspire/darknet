@@ -436,6 +436,8 @@ typedef struct network{
     int subdivisions;
     layer *layers;
     float *output;
+    float *outputn;
+    int exitn;
     learning_rate_policy policy;
 
     float learning_rate;
@@ -459,7 +461,9 @@ typedef struct network{
 
     int inputs;
     int outputs;
+    int outputsn;
     int truths;
+    int truthsn;
     int notruth;
     int h, w, c;
     int max_crop;
@@ -479,6 +483,7 @@ typedef struct network{
 
     float *input;
     float *truth;
+    float *truthn;
     float *delta;
     float *workspace;
     int train;
@@ -489,6 +494,7 @@ typedef struct network{
 #ifdef GPU
     float *input_gpu;
     float *truth_gpu;
+    float *truthn_gpu;
     float *delta_gpu;
     float *output_gpu;
 #endif
@@ -535,6 +541,7 @@ typedef struct{
     int w, h;
     matrix X;
     matrix y;
+    matrix yn;
     int shallow;
     int *num_boxes;
     box **boxes;
@@ -716,6 +723,7 @@ size_t get_current_batch(network *net);
 void constrain_image(image im);
 image get_network_image_layer(network *net, int i);
 layer get_network_output_layer(network *net);
+layer get_network_outputn_layer(network *net, int exit);
 void top_predictions(network *net, int n, int *index);
 void flip_image(image a);
 image float_to_image(int w, int h, int c, float *data);

@@ -205,6 +205,7 @@ void forward_network(network *netp)
         net.input = l.output;
         if(l.truth) {
             net.truth = l.output;
+            net.truthn = l.output;
         }
     }
     calc_network_cost(netp);
@@ -321,6 +322,7 @@ float train_network(network *net, data d)
     float sum = 0;
     for(i = 0; i < n; ++i){
         get_next_batch(d, batch, i*batch, net->input, net->truth);
+	get_next_batch(d, batch, i*batch, NULL, net->truthn);
         float err = train_network_datum(net);
         sum += err;
     }
@@ -414,14 +416,18 @@ int resize_network(network *net, int w, int h)
     net->output = out.output;
     free(net->input);
     free(net->truth);
+    free(net->truthn);
     net->input = calloc(net->inputs*net->batch, sizeof(float));
     net->truth = calloc(net->truths*net->batch, sizeof(float));
+    net->truthn = calloc(net->truths*net->batch, sizeof(float));
 #ifdef GPU
     if(gpu_index >= 0){
         cuda_free(net->input_gpu);
         cuda_free(net->truth_gpu);
+        cuda_free(net->truthn_gpu);
         net->input_gpu = cuda_make_array(net->input, net->inputs*net->batch);
         net->truth_gpu = cuda_make_array(net->truth, net->truths*net->batch);
+        net->truthn_gpu = cuda_make_array(net->truthn, net->truths*net->batch);
         if(workspace_size){
             net->workspace = cuda_make_array(0, (workspace_size-1)/sizeof(float)+1);
         }
@@ -499,6 +505,7 @@ float *network_predict(network *net, float *input)
     network orig = *net;
     net->input = input;
     net->truth = 0;
+    net->truthn = 0;
     net->train = 0;
     net->delta = 0;
     forward_network(net);
@@ -696,6 +703,30 @@ float *network_accuracies(network *net, data d, int n)
     return acc;
 }
 
+layer get_network_outputn_layer(network *net, int exit)
+{
+    int i, count = 0;
+    for(i = net->n - 1; i >= 0; --i){
+        if((net->layers[i].type == SOFTMAX) || (net->layers[i].type == YOLO)){
+	        //printf("%s idx: %d net->layers[i].type: %d", __func__, i, net->layers[i].type);
+            if(count == exit) {
+                //printf(" exit\n");
+                break;
+            } else {
+                count++;
+		//printf("\n");
+            }
+        }
+    }
+
+    if (i <= 0) {
+        printf("no exit found, returning default exit\n");
+        return get_network_output_layer(net);
+    }
+
+    return net->layers[i];
+}
+
 layer get_network_output_layer(network *net)
 {
     int i;
@@ -722,9 +753,11 @@ void free_network(network *net)
     free(net->layers);
     if(net->input) free(net->input);
     if(net->truth) free(net->truth);
+    if(net->truthn) free(net->truthn);
 #ifdef GPU
     if(net->input_gpu) cuda_free(net->input_gpu);
     if(net->truth_gpu) cuda_free(net->truth_gpu);
+    if(net->truthn_gpu) cuda_free(net->truthn_gpu);
 #endif
     free(net);
 }
@@ -767,6 +800,9 @@ void forward_network_gpu(network *netp)
     if(net.truth){
         cuda_push_array(net.truth_gpu, net.truth, net.truths*net.batch);
     }
+    if(net.truthn){
+        cuda_push_array(net.truthn_gpu, net.truthn, net.truths*net.batch);
+    }
 
     int i;
     for(i = 0; i < net.n; ++i){
@@ -781,6 +817,8 @@ void forward_network_gpu(network *netp)
         if(l.truth) {
             net.truth_gpu = l.output_gpu;
             net.truth = l.output;
+            net.truthn_gpu = l.output_gpu;
+            net.truthn = l.output;
         }
     }
     pull_network_output(netp);
@@ -1123,6 +1161,9 @@ float train_networks(network **nets, int n, data d, int interval)
 void pull_network_output(network *net)
 {
     layer l = get_network_output_layer(net);
+    cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);
+
+    l = get_network_outputn_layer(net, net->exitn);
     cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);
 }
 

@@ -8,6 +8,9 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     list *options = read_data_cfg(datacfg);
     char *train_images = option_find_str(options, "train", "data/train.list");
     char *backup_directory = option_find_str(options, "backup", "/backup/");
+    int tag = option_find_int_quiet(options, "tag", 0);
+    char *label_list = option_find_str(options, "labels", "data/labels.list");
+    char *tree = option_find_str(options, "tree", 0);
 
     srand(time(0));
     char *base = basecfg(cfgfile);
@@ -29,6 +32,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     srand(time(0));
     network *net = nets[0];
 
+    if (tree) net->hierarchy = read_tree(tree);
     int imgs = net->batch * net->subdivisions * ngpus;
     printf("Learning Rate: %g, Momentum: %g, Decay: %g\n", net->learning_rate, net->momentum, net->decay);
     data train, buffer;
@@ -42,6 +46,11 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     //int N = plist->size;
     char **paths = (char **)list_to_array(plist);
 
+    char **labels = 0;
+    if(!tag){
+        labels = get_labels(label_list);
+    }
+
     load_args args = get_base_args(net);
     args.coords = l.coords;
     args.paths = paths;
@@ -53,6 +62,13 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     args.d = &buffer;
     args.type = DETECTION_DATA;
     //args.type = INSTANCE_DATA;
+    args.labels = labels;
+    args.hierarchy = net->hierarchy;
+    args.min = net->min_ratio*net->w;
+    args.max = net->max_ratio*net->w;
+    args.size = net->w;
+    args.angle = net->angle;
+    args.aspect = net->aspect;
     args.threads = 64;
 
     pthread_t load_thread = load_data(args);

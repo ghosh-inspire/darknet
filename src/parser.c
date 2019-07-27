@@ -662,6 +662,7 @@ void parse_net_options(list *options, network *net)
     int subdivs = option_find_int(options, "subdivisions",1);
     net->time_steps = option_find_int_quiet(options, "time_steps",1);
     net->notruth = option_find_int_quiet(options, "notruth",0);
+    net->exitn = option_find_int_quiet(options, "exitn",0);
     net->batch /= subdivs;
     net->batch *= net->time_steps;
     net->subdivisions = subdivs;
@@ -863,16 +864,22 @@ network *parse_network_cfg(char *filename)
     }
     free_list(sections);
     layer out = get_network_output_layer(net);
+    layer outn = get_network_outputn_layer(net, net->exitn);
     net->outputs = out.outputs;
     net->truths = out.outputs;
-    if(net->layers[net->n-1].truths) net->truths = net->layers[net->n-1].truths;
+    net->outputsn = outn.outputs;
+    net->truthsn = outn.outputs;
+    if(net->layers[net->n-1].truths) {net->truths = net->layers[net->n-1].truths; }
     net->output = out.output;
+    net->outputn = outn.output;
     net->input = calloc(net->inputs*net->batch, sizeof(float));
     net->truth = calloc(net->truths*net->batch, sizeof(float));
+    net->truthn = calloc(net->truthsn*net->batch, sizeof(float));
 #ifdef GPU
     net->output_gpu = out.output_gpu;
     net->input_gpu = cuda_make_array(net->input, net->inputs*net->batch);
     net->truth_gpu = cuda_make_array(net->truth, net->truths*net->batch);
+    net->truthn_gpu = cuda_make_array(net->truthn, net->truths*net->batch);
 #endif
     if(workspace_size){
         //printf("%ld\n", workspace_size);

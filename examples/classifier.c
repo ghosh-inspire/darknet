@@ -595,6 +595,7 @@ void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *fi
         float *X = r.data;
         time=clock();
         float *predictions = network_predict(net, X);
+	float *predictionsn = net->outputn;
         if(net->hierarchy) hierarchy_predictions(predictions, net->outputs, net->hierarchy, 1, 1);
         top_k(predictions, net->outputs, top, indexes);
         fprintf(stderr, "%s: Predicted in %f seconds.\n", input, sec(clock()-time));
@@ -604,6 +605,13 @@ void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *fi
             //else printf("%s: %f\n",names[index], predictions[index]);
             printf("%5.2f%%: %s\n", predictions[index]*100, names[index]);
         }
+        top_k(predictionsn, net->outputs, top, indexes);
+        fprintf(stderr, "%s: Predicted in %f seconds.\n", input, sec(clock()-time));
+        for(i = 0; i < top; ++i){
+            int index = indexes[i];
+            printf("%5.2f%%: %s\n", predictionsn[index]*100, names[index]);
+        }
+
         if(r.data != im.data) free_image(r);
         free_image(im);
         if (filename) break;
