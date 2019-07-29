@@ -131,6 +131,16 @@ void *detect_in_thread(void *ptr)
     image display = buff[(buff_index+2) % 3];
     draw_detections(display, dets, nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes);
     free_detections(dets, nboxes);
+#if 1
+    	int top = 5;
+	int *indexes = calloc(top, sizeof(int));
+        float *predictionsn = net->outputn;
+        top_k(predictionsn, net->outputsn, top, indexes);
+        for(int i = 0; i < top; ++i){
+            int index = indexes[i];
+            printf("smax: %5.2f%%: %s\n", predictionsn[index]*100, demo_names[index]);
+        }
+#endif
 
     demo_index = (demo_index + 1)%demo_frame;
     running = 0;
