@@ -134,9 +134,10 @@ void *detect_in_thread(void *ptr)
 #if 1
     	int top = 5;
 	int *indexes = calloc(top, sizeof(int));
+	int i = 0;
         float *predictionsn = net->outputn;
         top_k(predictionsn, net->outputsn, top, indexes);
-        for(int i = 0; i < top; ++i){
+        for(i = 0; i < top; ++i){
             int index = indexes[i];
             printf("smax: %5.2f%%: %s\n", predictionsn[index]*100, demo_names[index]);
         }
