@@ -565,7 +565,10 @@ void fill_truth_simple(char *path, int k, float *truth_box, float *truth)
             //printf("%s %d\n", path, i);
         }
     }
-    if(count != 1 && (k != 1 || count != 0)) printf("Too many or too few labels: %d, %s\n", count, path);
+    if(count != 1 && (k != 1 || count != 0)) {
+        printf("Too many or too few labels: %d, %s\n", count, path);
+	assert(1 == 2);
+    }
 }
 
 void fill_truth_voc(char *path, char **labels, int k, float *truth)
