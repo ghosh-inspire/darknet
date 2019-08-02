@@ -541,21 +541,32 @@ data load_data_captcha_encode(char **paths, int n, int m, int w, int h)
     return d;
 }
 
-void fill_truth_simple(char *path, int k, float *truth_box, float *truth)
+void fill_truth_detection_clfr(char *path, int k, float *truth_box, float *truth, int rnd)
 {
     int i = 0;
+    int j = 0;
     int id = 0;
 
     while(1) {
         if(truth_box[i*5+2] && truth_box[i*5+3]) {
-		i++;
-	} else {
-		break;
+            i++;
+        } else {
+            break;
+        }
+    }
+    assert(i > 0);
+
+    if(rnd) {
+        id = truth_box[rand_int(0, i - 1) * 5 + 4];
+    } else {
+        for(j = 0; j < i; j++) {
+            if(truth_box[j * 5 + 4] > id) {
+                id = truth_box[j * 5 + 4];
+            }
 	}
     }
-    id = truth_box[rand_int(0, i - 1) * 5 + 4];
 
-    //printf("i: %d id: %d\n", i - 1, id);
+    //printf("i: %d id: %d pth: %s\n", i, id, path);
     memset(truth, 0, k*sizeof(float));
     int count = 0;
     for(i = 0; i < k; ++i){
@@ -567,7 +578,7 @@ void fill_truth_simple(char *path, int k, float *truth_box, float *truth)
     }
     if(count != 1 && (k != 1 || count != 0)) {
         printf("Too many or too few labels: %d, %s\n", count, path);
-	assert(1 == 2);
+	assert(2 == 3);
     }
 }
 
@@ -1152,7 +1163,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
 
 
         fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
-	fill_truth_simple(random_paths[i], classes, d.y.vals[i], d.yn.vals[i]);
+	fill_truth_detection_clfr(random_paths[i], classes, d.y.vals[i], d.yn.vals[i], 0);
     	//printf("%s: cls: %d %f %f\n", random_paths[i], classes, d.y.vals[i][4], d.yn.vals[i][(int)d.y.vals[i][4]]);
 
         free_image(orig);
