@@ -546,6 +546,7 @@ void fill_truth_detection_clfr(char *path, int k, float *truth_box, float *truth
     int i = 0;
     int j = 0;
     int id = 0;
+    float sz = 0;
 
     while(1) {
         if(truth_box[i*5+2] && truth_box[i*5+3]) {
@@ -560,7 +561,8 @@ void fill_truth_detection_clfr(char *path, int k, float *truth_box, float *truth
         id = truth_box[rand_int(0, i - 1) * 5 + 4];
     } else {
         for(j = 0; j < i; j++) {
-            if(truth_box[j * 5 + 4] > id) {
+            if((truth_box[j * 5 + 2] * truth_box[j * 5 + 3]) > sz) {
+                sz = truth_box[j * 5 + 2] * truth_box[j * 5 + 3];
                 id = truth_box[j * 5 + 4];
             }
 	}
