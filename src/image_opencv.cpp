@@ -74,7 +74,8 @@ void *open_video_stream(const char *f, int c, int w, int h, int fps)
     if(!cap->isOpened()) return 0;
     if(w) cap->set(CV_CAP_PROP_FRAME_WIDTH, w);
     if(h) cap->set(CV_CAP_PROP_FRAME_HEIGHT, w);
-    if(fps) cap->set(CV_CAP_PROP_FPS, w);
+    if(fps) cap->set(CV_CAP_PROP_FPS, 1);
+    cap->set(CV_CAP_PROP_FOURCC, CV_FOURCC('Y','U','Y','V') );
     return (void *) cap;
 }
 

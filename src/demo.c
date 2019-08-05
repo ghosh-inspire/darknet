@@ -8,6 +8,8 @@
 #include "image.h"
 #include "demo.h"
 #include <sys/time.h>
+#include <sys/file.h>
+#include <assert.h>
 
 #define DEMO 1
 
@@ -82,14 +84,16 @@ detection *avg_predictions(network *net, int *nboxes)
     return dets;
 }
 
+#define EDGE_SERVER
 void *detect_in_thread(void *ptr)
 {
     running = 1;
     float nms = .4;
 
-    layer l = net->layers[net->n-1];
     float *X = buff_letter[(buff_index+2)%3].data;
     network_predict(net, X);
+#ifdef EDGE_SERVER
+    layer l = net->layers[net->n-1];
 
     /*
        if(l.type == DETECTION){
@@ -124,32 +128,39 @@ void *detect_in_thread(void *ptr)
 
     if (nms > 0) do_nms_obj(dets, nboxes, l.classes, nms);
 
+#endif
     printf("\033[2J");
     printf("\033[1;1H");
     printf("\nFPS:%.1f\n",fps);
+#ifdef EDGE_SERVER
     printf("Objects:\n\n");
     image display = buff[(buff_index+2) % 3];
     draw_detections(display, dets, nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes);
     free_detections(dets, nboxes);
-#if 1
-    	int top = 5;
-	int *indexes = calloc(top, sizeof(int));
-	int i = 0;
-        float *predictionsn = net->outputn;
-        top_k(predictionsn, net->outputsn, top, indexes);
-        for(i = 0; i < top; ++i){
-            int index = indexes[i];
-            printf("smax: %5.2f%%: %s\n", predictionsn[index]*100, demo_names[index]);
-        }
-#endif
-
     demo_index = (demo_index + 1)%demo_frame;
     running = 0;
+#else
+    int top = 5;
+    int *indexes = calloc(top, sizeof(int));
+    int i = 0;
+    float *predictionsn = net->outputn;
+    top_k(predictionsn, net->outputsn, top, indexes);
+    for(i = 0; i < top; ++i){
+        int index = indexes[i];
+        printf("smax: %5.2f%%: %s\n", predictionsn[index]*100, demo_names[index]);
+    }
+#endif
     return 0;
 }
 
 void *fetch_in_thread(void *ptr)
 {
+#if 0
+    pthread_t this_thread = pthread_self();
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread, SCHED_FIFO, &params);
+#endif
     free_image(buff[buff_index]);
     buff[buff_index] = get_image_from_stream(cap);
     if(buff[buff_index].data == 0) {
@@ -195,8 +206,30 @@ void *detect_loop(void *ptr)
     }
 }
 
+static FILE *infdata = NULL;
+
+void *fetch_info_thread(void *ptr) {
+    int result;
+    while(1) {
+        int result = flock(fileno(infdata), LOCK_SH);
+        assert(result == 0);
+
+        flock(fileno(infdata), LOCK_UN);
+    }
+    return 0;
+}
+
+void save_inference_info(void * data, ssize_t len) {
+    int result = flock(fileno(infdata), LOCK_SH);
+    assert(result == 0);
+
+    //save_image(buff[(buff_index + 1)%3], name);
+    flock(fileno(infdata), LOCK_UN);
+}
+
 void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, int classes, int delay, char *prefix, int avg_frames, float hier, int w, int h, int frames, int fullscreen)
 {
+    int cnt = 0;
     //demo_frame = avg_frames;
     image **alphabet = load_alphabet();
     demo_names = names;
@@ -207,8 +240,15 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     printf("Demo\n");
     net = load_network(cfgfile, weightfile, 0);
     set_batch_network(net, 1);
+#if 0
     pthread_t detect_thread;
     pthread_t fetch_thread;
+#endif
+    pthread_t infinfo_thread;
+
+    infdata = fopen ("infdata.dat", "w+");
+    assert(NULL != infdata);
+    if(pthread_create(&infinfo_thread, 0, fetch_info_thread, 0))error("Thread creation failed");
 
     srand(2222222);
 
@@ -237,29 +277,45 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     buff_letter[2] = letterbox_image(buff[0], net->w, net->h);
 
     int count = 0;
+#ifdef EDGE_SERVER
     if(!prefix){
         make_window("Demo", 1352, 1013, fullscreen);
     }
-
+#endif
     demo_time = what_time_is_it_now();
 
     while(!demo_done){
         buff_index = (buff_index + 1) %3;
+#if 0
         if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
         if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
+#endif
+#ifndef EDGE_SERVER
+        for(cnt = 0; cnt < 50; cnt++)
+            fetch_in_thread(0);
+#endif
+        fetch_in_thread(0);
+        detect_in_thread(0);
         if(!prefix){
             fps = 1./(what_time_is_it_now() - demo_time);
             demo_time = what_time_is_it_now();
+#ifdef EDGE_SERVER
             display_in_thread(0);
+#endif
         }else{
             char name[256];
             sprintf(name, "%s_%08d", prefix, count);
             save_image(buff[(buff_index + 1)%3], name);
         }
+#if 0
         pthread_join(fetch_thread, 0);
         pthread_join(detect_thread, 0);
+#endif
         ++count;
     }
+
+    pthread_join(infinfo_thread, 0);
+    fclose(infdata);
 }
 
 /*
