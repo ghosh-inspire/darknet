@@ -545,7 +545,7 @@ void fill_truth_detection_clfr(char *path, int k, float *truth_box, float *truth
 {
     int i = 0;
     int j = 0;
-    int id = 0;
+    int *id = calloc(k, sizeof(int));
     float sz = 0;
 
     while(1) {
@@ -557,30 +557,47 @@ void fill_truth_detection_clfr(char *path, int k, float *truth_box, float *truth
     }
     assert(i > 0);
 
-    if(rnd) {
-        id = truth_box[rand_int(0, i - 1) * 5 + 4];
-    } else {
+    if(1 == rnd) {
+        id[0] = truth_box[rand_int(0, i - 1) * 5 + 4];
+    } else if(0 == rnd){
         for(j = 0; j < i; j++) {
             if((truth_box[j * 5 + 2] * truth_box[j * 5 + 3]) > sz) {
                 sz = truth_box[j * 5 + 2] * truth_box[j * 5 + 3];
-                id = truth_box[j * 5 + 4];
+                id[0] = truth_box[j * 5 + 4];
             }
-	}
+        }
+    } else if (2 == rnd){
+        for(j = 0; j < i; j++) {
+            id[(int)truth_box[j * 5 + 4]] = 1;
+        }
+    } else {
+        printf("invalid option: %d\n", rnd);
+	assert(0);
     }
 
-    //printf("i: %d id: %d pth: %s\n", i, id, path);
+    //printf("i: %d id[0]: %d pth: %s\n", i, id[0], path);
     memset(truth, 0, k*sizeof(float));
-    int count = 0;
-    for(i = 0; i < k; ++i){
-        if(id == i){
-            truth[i] = 1;
-            ++count;
-            //printf("%s %d\n", path, i);
+    if((0 == rnd) || (1 == rnd)) {
+        int count = 0;
+        for(i = 0; i < k; ++i){
+            if(id[0] == i){
+                truth[i] = 1;
+                ++count;
+                //printf("%s %d\n", path, i);
+            }
         }
-    }
-    if(count != 1 && (k != 1 || count != 0)) {
-        printf("Too many or too few labels: %d, %s\n", count, path);
-	assert(2 == 3);
+        free(id);
+        if(count != 1 && (k != 1 || count != 0)) {
+            printf("Too many or too few labels: %d, %s\n", count, path);
+            assert(2 == 3);
+        }
+    } else {
+        //printf("\n%s\n", path);
+        for(i = 0; i < k; ++i){
+            truth[i] = id[i];
+	    //printf("%f ", truth[i]);
+        }
+	//printf("\n");
     }
 }
 
@@ -1165,7 +1182,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
 
 
         fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx/w, -dy/h, nw/w, nh/h);
-	fill_truth_detection_clfr(random_paths[i], classes, d.y.vals[i], d.yn.vals[i], 0);
+	fill_truth_detection_clfr(random_paths[i], classes, d.y.vals[i], d.yn.vals[i], 2);
     	//printf("%s: cls: %d %f %f\n", random_paths[i], classes, d.y.vals[i][4], d.yn.vals[i][(int)d.y.vals[i][4]]);
 
         free_image(orig);
