@@ -91,11 +91,12 @@ detection *avg_predictions(network *net, int *nboxes)
 #define EDGE_SERVER
 #define EDGE_DEVICE
 #define TOP_N_PREDICTIONS (5)
+#define CLIENT_NUM_DEVICES (1)
 #define CLIENT_SERVER_PORT (8080)
+#define IMAGE_DATA_LEN (1024)
 typedef struct data_t {
     int len;
     float pred_data[TOP_N_PREDICTIONS];
-    float *image_data;
     char id;
 } sock_data;
 
@@ -110,7 +111,9 @@ static pthread_mutex_t lock_client;
 #endif
 
 #ifdef EDGE_SERVER
+static float server_avg_predictions[CLIENT_NUM_DEVICES];
 static pthread_mutex_t lock_server;
+static pthread_mutex_t lock_server_file;
 #endif
 
 void *detect_in_thread(void *ptr)
@@ -242,9 +245,8 @@ void *detect_loop(void *ptr)
 
 #ifdef EDGE_SERVER
 
-static int server_socket0 = 0;
-void server_socket_init(void) {
-
+int server_socket_init(void) {
+    int server_socket = 0;
     int server_fd;
     struct sockaddr_in address;
     int opt = 1;
@@ -275,29 +277,45 @@ void server_socket_init(void) {
         printf("bind failed\n");
 	assert(0);
     }
+    pthread_mutex_lock(&lock_server);
     if (listen(server_fd, 3) < 0)
     {
         printf("listen failed\n");
+        pthread_mutex_unlock(&lock_server);
 	assert(0);
     }
-    if ((server_socket0 = accept(server_fd, (struct sockaddr *)&address,
+    pthread_mutex_unlock(&lock_server);
+    if ((server_socket = accept(server_fd, (struct sockaddr *)&address,
                        (socklen_t*)&addrlen))<0)
     {
         printf("accept failed\n");
 	assert(0);
     }
+
+    return server_socket;
 }
 
-void server_recv(fetch_req state_local) {
+float server_recv(fetch_req state_local, int server_socket) {
 
     sock_data buffer;
     int ret = 0;
+    char server_buff[IMAGE_DATA_LEN + 1];
+    int tot = 0;
+    int b = 0;
+    int i = 0;
+    float pred = 0.0;
+    FILE* fp = NULL;
 
     switch(state_local) {
        case FETCH_INFO:
-           ret = read(server_socket0 , &buffer, sizeof(buffer));
+           ret = read(server_socket , &buffer, sizeof(buffer));
            assert(ret > 0);
            if (buffer.id != 'I') assert(0);
+
+	   for (i = 0; i < TOP_N_PREDICTIONS; i++) {
+               pred += buffer.pred_data[i];
+	   }
+	   pred /= TOP_N_PREDICTIONS;
 #if 0
            printf("pred: %5.2f%%\n", buffer.pred_data[0] * 100);
            printf("pred: %5.2f%%\n", buffer.pred_data[1] * 100);
@@ -307,18 +325,31 @@ void server_recv(fetch_req state_local) {
 #endif
            break;
        case FETCH_DATA:
-           ret = read(server_socket0 , &buffer, sizeof(buffer));
-           assert(ret > 0);
-           if (buffer.id != 'D') assert(0);
+           fp = fopen("inffile1_server.jpg", "wb");
+           if(fp != NULL){
+               while((b = recv(server_socket, server_buff, sizeof(server_buff) - 1, 0)) > 0) {
+                   tot+=b;
+                   fwrite(server_buff, 1, b, fp);
+                   if(((unsigned char)server_buff[b-1] == 0xd9) \
+		       && ((unsigned char)server_buff[b-2] == 0xff)) {
+                       break;
+		   }
+               }
+               //printf("Received byte: %d\n",tot);
+               if (b < 0) error("\n Receiving error\n");
+               fclose(fp);
+           } else {
+               error("\n File open error\n");
+           }
            break;
        default:
-           printf("Invalid state\n");
-           assert(0);
+           error("\n Invalid state\n");
            break;
     }
+    return pred;
 }
 
-void server_send(fetch_req state_local) {
+void server_send(fetch_req state_local, int server_socket) {
 
     sock_data buffer;
     int ret = 0;
@@ -327,13 +358,13 @@ void server_send(fetch_req state_local) {
        case FETCH_INFO:
            buffer.id = 'I';
 	   buffer.len = 0;
-	   ret = send(server_socket0, &buffer, sizeof(buffer), 0);
+	   ret = send(server_socket, &buffer, sizeof(buffer), 0);
            assert(ret > 0);
            break;
        case FETCH_DATA:
            buffer.id = 'D';
 	   buffer.len = 0;
-	   ret = send(server_socket0, &buffer, sizeof(buffer), 0);
+	   ret = send(server_socket, &buffer, sizeof(buffer), 0);
            assert(ret > 0);
            break;
        default:
@@ -344,19 +375,32 @@ void server_send(fetch_req state_local) {
 }
 
 void *fetch_server_info_thread(void *ptr) {
-    server_socket_init();
+    int idx = (int)ptr;
+    int server_socket = server_socket_init();
+
     fetch_req state_local = FETCH_INFO;
     while(1) {
         switch(state_local) {
             case FETCH_INFO:
+                sleep(1);
                 pthread_mutex_lock(&lock_server);
-	        server_send(FETCH_INFO);
-		server_recv(FETCH_INFO);
+	        server_send(FETCH_INFO, server_socket);
+                server_avg_predictions[idx] = server_recv(FETCH_INFO, server_socket);
+		if(max_index(server_avg_predictions, CLIENT_NUM_DEVICES) == idx) {
+	            state_local = FETCH_DATA;
+                    pthread_mutex_lock(&lock_server_file);
+                    system("cp inffile1_server.jpg inffile2_server.jpg");
+                    pthread_mutex_unlock(&lock_server_file);
+		} else {
+	            state_local = FETCH_INFO;
+		}
                 pthread_mutex_unlock(&lock_server);
                 break;
             case FETCH_DATA:
                 pthread_mutex_lock(&lock_server);
-
+	        state_local = FETCH_INFO;
+	        server_send(FETCH_DATA, server_socket);
+		server_recv(FETCH_DATA, server_socket);
                 pthread_mutex_unlock(&lock_server);
                 break;
             default:
@@ -364,7 +408,6 @@ void *fetch_server_info_thread(void *ptr) {
                 assert(0);
                 break;
 	}
-        sleep(1);
     }
     return 0;
 }
@@ -403,7 +446,9 @@ void client_send(fetch_req state_local) {
 
     sock_data buffer;
     int ret = 0;
-    int i = 0;
+    int i = 0, b = 0;
+    FILE *fp = NULL;
+    char client_buff[IMAGE_DATA_LEN];
 
     switch(state_local) {
        case FETCH_INFO:
@@ -416,9 +461,13 @@ void client_send(fetch_req state_local) {
 	   assert(ret > 0);
            break;
        case FETCH_DATA:
-           buffer.id = 'D';
-	   buffer.len = 0;
-	   ret = send(client_socket, &buffer, sizeof(buffer), 0);
+	   fp = fopen("inffile2.jpg", "rb");
+           if(fp == NULL) error("\n File open error\n");
+
+           while( (b = fread(client_buff, 1, sizeof(client_buff), fp))>0 ){
+               send(client_socket, client_buff, b, 0);
+           }
+           fclose(fp);
            break;
        default:
            printf("Invalid state\n");
@@ -460,7 +509,7 @@ void *fetch_client_info_thread(void *ptr) {
                 break;
             case FETCH_DATA:
                 pthread_mutex_lock(&lock_client);
-
+		client_send(FETCH_DATA);
                 pthread_mutex_unlock(&lock_client);
                 break;
             default:
@@ -493,16 +542,20 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     pthread_t fetch_thread;
 #endif
 #ifdef EDGE_SERVER
-    pthread_t infinfo_server_thread;
+    pthread_t infinfo_server_thread[CLIENT_NUM_DEVICES];
     if (pthread_mutex_init(&lock_server, NULL) != 0) error("\n mutex init has failed\n");
-    if(pthread_create(&infinfo_server_thread, 0, fetch_server_info_thread, 0))error("Thread creation failed");
+    if (pthread_mutex_init(&lock_server_file, NULL) != 0) error("\n mutex init has failed\n");
+    for (cnt = 0; cnt < CLIENT_NUM_DEVICES; cnt++) {
+        if(pthread_create(&infinfo_server_thread[cnt], 0, \
+				fetch_server_info_thread, (void *)cnt))error("\n Thread creation failed\n");
+    }
 #endif
 
 #ifdef EDGE_DEVICE
     pthread_t infinfo_client_thread;
     if (pthread_mutex_init(&lock_client, NULL) != 0) error("\n mutex init has failed\n");
     sleep(1);
-    if(pthread_create(&infinfo_client_thread, 0, fetch_client_info_thread, 0))error("Thread creation failed");
+    if(pthread_create(&infinfo_client_thread, 0, fetch_client_info_thread, 0))error("\n Thread creation failed\n");
 #endif
 
     srand(2222222);
@@ -574,7 +627,9 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 #endif
 
 #ifdef EDGE_SERVER
-    pthread_join(infinfo_server_thread, 0);
+    for (cnt = 0; cnt < CLIENT_NUM_DEVICES; cnt++) {
+        pthread_join(infinfo_server_thread[cnt], 0);
+    }
 #endif
 }
 
