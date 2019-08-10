@@ -383,8 +383,10 @@ void server_send(fetch_req state_local, int server_socket) {
 
 void *fetch_server_info_thread(void *ptr) {
     int idx = (int)ptr;
+#if 0
     float prev_pred = 0;
     float curr_pred = 0;
+#endif
     pthread_mutex_lock(&lock_server_init);
     int server_socket = server_socket_init(idx);
     pthread_mutex_unlock(&lock_server_init);
@@ -397,12 +399,12 @@ void *fetch_server_info_thread(void *ptr) {
                 sleep(1);
                 pthread_mutex_lock(&lock_server);
 	        server_send(FETCH_INFO, server_socket);
+#if 0
 		curr_pred = server_recv(FETCH_INFO, server_socket);
 		server_avg_predictions[idx] = fabsf(curr_pred - prev_pred);
                 prev_pred = curr_pred;
-		/* Testing */
+#endif
                 server_avg_predictions[idx] = server_recv(FETCH_INFO, server_socket);
-		/* Testing */
 		if(max_index(server_avg_predictions, CLIENT_NUM_DEVICES) == idx) {
 	            state_local = FETCH_DATA;
 		} else {
