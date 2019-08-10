@@ -16,6 +16,8 @@
 #include <arpa/inet.h>
 
 #define DEMO 1
+#define EDGE_SERVER
+#define EDGE_DEVICE
 
 #ifdef OPENCV
 
@@ -27,7 +29,9 @@ static network *net;
 static image buff [3];
 static image buff_letter[3];
 static int buff_index = 0;
+#ifdef EDGE_DEVICE
 static void * cap;
+#endif
 static float fps = 0;
 static float demo_thresh = 0;
 static float demo_hier = .5;
@@ -88,10 +92,8 @@ detection *avg_predictions(network *net, int *nboxes)
     return dets;
 }
 
-#define EDGE_SERVER
-#define EDGE_DEVICE
 #define TOP_N_PREDICTIONS (5)
-#define CLIENT_NUM_DEVICES (1)
+#define CLIENT_NUM_DEVICES (3)
 #define CLIENT_SERVER_PORT (8080)
 #define IMAGE_DATA_LEN (1024)
 typedef struct data_t {
@@ -114,6 +116,7 @@ static pthread_mutex_t lock_client;
 static float server_avg_predictions[CLIENT_NUM_DEVICES];
 static pthread_mutex_t lock_server;
 static pthread_mutex_t lock_server_file;
+static pthread_mutex_t lock_server_init;
 #endif
 
 void *detect_in_thread(void *ptr)
@@ -199,7 +202,13 @@ void *fetch_in_thread(void *ptr)
     pthread_setschedparam(this_thread, SCHED_FIFO, &params);
 #endif
     free_image(buff[buff_index]);
+#ifdef EDGE_DEVICE
     buff[buff_index] = get_image_from_stream(cap);
+#else
+    pthread_mutex_lock(&lock_server_file);
+    buff[buff_index] = load_image_color("inffile2_server.jpg", 0, 0);
+    pthread_mutex_unlock(&lock_server_file);
+#endif
     if(buff[buff_index].data == 0) {
         demo_done = 1;
         return 0;
@@ -245,7 +254,7 @@ void *detect_loop(void *ptr)
 
 #ifdef EDGE_SERVER
 
-int server_socket_init(void) {
+int server_socket_init(int idx) {
     int server_socket = 0;
     int server_fd;
     struct sockaddr_in address;
@@ -269,6 +278,7 @@ int server_socket_init(void) {
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(CLIENT_SERVER_PORT);
+    //address.sin_port = htons(CLIENT_SERVER_PORT + idx);
        
     // Forcefully attaching socket to the port 8080
     if (bind(server_fd, (struct sockaddr *)&address,
@@ -277,14 +287,11 @@ int server_socket_init(void) {
         printf("bind failed\n");
 	assert(0);
     }
-    pthread_mutex_lock(&lock_server);
     if (listen(server_fd, 3) < 0)
     {
         printf("listen failed\n");
-        pthread_mutex_unlock(&lock_server);
 	assert(0);
     }
-    pthread_mutex_unlock(&lock_server);
     if ((server_socket = accept(server_fd, (struct sockaddr *)&address,
                        (socklen_t*)&addrlen))<0)
     {
@@ -376,7 +383,12 @@ void server_send(fetch_req state_local, int server_socket) {
 
 void *fetch_server_info_thread(void *ptr) {
     int idx = (int)ptr;
-    int server_socket = server_socket_init();
+    float prev_pred = 0;
+    float curr_pred = 0;
+    pthread_mutex_lock(&lock_server_init);
+    int server_socket = server_socket_init(idx);
+    pthread_mutex_unlock(&lock_server_init);
+
 
     fetch_req state_local = FETCH_INFO;
     while(1) {
@@ -385,22 +397,26 @@ void *fetch_server_info_thread(void *ptr) {
                 sleep(1);
                 pthread_mutex_lock(&lock_server);
 	        server_send(FETCH_INFO, server_socket);
+		curr_pred = server_recv(FETCH_INFO, server_socket);
+		server_avg_predictions[idx] = fabsf(curr_pred - prev_pred);
+                prev_pred = curr_pred;
+		/* Testing */
                 server_avg_predictions[idx] = server_recv(FETCH_INFO, server_socket);
+		/* Testing */
 		if(max_index(server_avg_predictions, CLIENT_NUM_DEVICES) == idx) {
 	            state_local = FETCH_DATA;
-                    pthread_mutex_lock(&lock_server_file);
-                    system("cp inffile1_server.jpg inffile2_server.jpg");
-                    pthread_mutex_unlock(&lock_server_file);
 		} else {
 	            state_local = FETCH_INFO;
+                    pthread_mutex_unlock(&lock_server);
 		}
-                pthread_mutex_unlock(&lock_server);
                 break;
             case FETCH_DATA:
-                pthread_mutex_lock(&lock_server);
 	        state_local = FETCH_INFO;
 	        server_send(FETCH_DATA, server_socket);
 		server_recv(FETCH_DATA, server_socket);
+                pthread_mutex_lock(&lock_server_file);
+                system("cp inffile1_server.jpg inffile2_server.jpg");
+                pthread_mutex_unlock(&lock_server_file);
                 pthread_mutex_unlock(&lock_server);
                 break;
             default:
@@ -524,9 +540,7 @@ void *fetch_client_info_thread(void *ptr) {
 
 void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, int classes, int delay, char *prefix, int avg_frames, float hier, int w, int h, int frames, int fullscreen)
 {
-#ifdef EDGE_DEVICE
     int cnt = 0;
-#endif
     //demo_frame = avg_frames;
     image **alphabet = load_alphabet();
     demo_names = names;
@@ -544,17 +558,18 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 #ifdef EDGE_SERVER
     pthread_t infinfo_server_thread[CLIENT_NUM_DEVICES];
     if (pthread_mutex_init(&lock_server, NULL) != 0) error("\n mutex init has failed\n");
+    if (pthread_mutex_init(&lock_server_init, NULL) != 0) error("\n mutex init has failed\n");
     if (pthread_mutex_init(&lock_server_file, NULL) != 0) error("\n mutex init has failed\n");
     for (cnt = 0; cnt < CLIENT_NUM_DEVICES; cnt++) {
         if(pthread_create(&infinfo_server_thread[cnt], 0, \
 				fetch_server_info_thread, (void *)cnt))error("\n Thread creation failed\n");
+        sleep(1);
     }
 #endif
 
 #ifdef EDGE_DEVICE
     pthread_t infinfo_client_thread;
     if (pthread_mutex_init(&lock_client, NULL) != 0) error("\n mutex init has failed\n");
-    sleep(1);
     if(pthread_create(&infinfo_client_thread, 0, fetch_client_info_thread, 0))error("\n Thread creation failed\n");
 #endif
 
@@ -568,6 +583,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     }
     avg = calloc(demo_total, sizeof(float));
 
+#ifdef EDGE_DEVICE
     if(filename){
         printf("video file: %s\n", filename);
         cap = open_video_stream(filename, 0, 0, 0, 0);
@@ -576,8 +592,17 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     }
 
     if(!cap) error("Couldn't connect to webcam.\n");
+#endif
 
+
+#ifdef EDGE_DEVICE
     buff[0] = get_image_from_stream(cap);
+#else
+    pthread_mutex_lock(&lock_server_file);
+    buff[0] = load_image_color("inffile2_server.jpg", 0, 0);
+    pthread_mutex_unlock(&lock_server_file);
+#endif
+
     buff[1] = copy_image(buff[0]);
     buff[2] = copy_image(buff[0]);
     buff_letter[0] = letterbox_image(buff[0], net->w, net->h);
@@ -598,7 +623,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
         if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
         if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
 #endif
-#ifdef EDGE_DEVICE
+#ifndef EDGE_SERVER
         for(cnt = 0; cnt < 50; cnt++)
             fetch_in_thread(0);
 #endif
