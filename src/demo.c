@@ -94,8 +94,9 @@ detection *avg_predictions(network *net, int *nboxes)
 
 #define TOP_N_PREDICTIONS (5)
 #define CLIENT_NUM_DEVICES (3)
-#define CLIENT_SERVER_PORT (8080)
+#define CLIENT_SERVER_PORT (65530)
 #define IMAGE_DATA_LEN (1024)
+#define PREDICTION_THRESHOLD (20)
 typedef struct data_t {
     int len;
     float pred_data[TOP_N_PREDICTIONS];
@@ -184,8 +185,12 @@ void *detect_in_thread(void *ptr)
     pthread_mutex_lock(&lock_client);
     for(i = 0; i < top; ++i) {
         int index = indexes[i];
-        printf("cls: %5.2f%%: %s\n", predictionsn[index]*100, demo_names[index]);
-	infClient_data[i] = predictionsn[index];
+	if(PREDICTION_THRESHOLD < (predictionsn[index] * 100)) {
+            printf("cls: %5.2f%%: %s\n", predictionsn[index]*100, demo_names[index]);
+	    infClient_data[i] = predictionsn[index];
+	} else {
+	    infClient_data[i] = 0.0;
+	}
     }
     save_image(buff[(buff_index + 2)%3], "inffile1");
     pthread_mutex_unlock(&lock_client);
@@ -256,10 +261,11 @@ void *detect_loop(void *ptr)
 
 int server_socket_init(int idx) {
     int server_socket = 0;
-    int server_fd;
+    int server_fd = 0;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
+    struct timeval tv;
        
     // Creating socket file descriptor
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
@@ -277,8 +283,7 @@ int server_socket_init(int idx) {
     }
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(CLIENT_SERVER_PORT);
-    //address.sin_port = htons(CLIENT_SERVER_PORT + idx);
+    address.sin_port = htons(CLIENT_SERVER_PORT + idx);
        
     // Forcefully attaching socket to the port 8080
     if (bind(server_fd, (struct sockaddr *)&address,
@@ -287,17 +292,29 @@ int server_socket_init(int idx) {
         printf("bind failed\n");
 	assert(0);
     }
+
     if (listen(server_fd, 3) < 0)
     {
         printf("listen failed\n");
 	assert(0);
     }
+
     if ((server_socket = accept(server_fd, (struct sockaddr *)&address,
                        (socklen_t*)&addrlen))<0)
     {
         printf("accept failed\n");
 	assert(0);
     }
+
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+    if(setsockopt(server_socket, SOL_SOCKET, SO_RCVTIMEO, \
+			    (const char*)&tv, sizeof tv)) {
+        printf("setsockopt failed\n");
+	assert(0);
+    }
+
+    printf("client id: %d initialised successfully\n", idx);
 
     return server_socket;
 }
@@ -315,7 +332,7 @@ float server_recv(fetch_req state_local, int server_socket) {
 
     switch(state_local) {
        case FETCH_INFO:
-           ret = read(server_socket , &buffer, sizeof(buffer));
+	   ret = recv(server_socket, &buffer, sizeof(buffer), MSG_WAITALL);
            assert(ret > 0);
            if (buffer.id != 'I') assert(0);
 
@@ -337,13 +354,18 @@ float server_recv(fetch_req state_local, int server_socket) {
                while((b = recv(server_socket, server_buff, sizeof(server_buff) - 1, 0)) > 0) {
                    tot+=b;
                    fwrite(server_buff, 1, b, fp);
-                   if(((unsigned char)server_buff[b-1] == 0xd9) \
-		       && ((unsigned char)server_buff[b-2] == 0xff)) {
-                       break;
+		   if(b <= (sizeof(server_buff) - 1)) {
+                       if(((unsigned char)server_buff[b-1] == 0xd9) \
+		           && ((unsigned char)server_buff[b-2] == 0xff)) {
+                           break;
+		       }
+		   } else {
+                       printf("Bad data received b: %d\n", b);
+		       assert(0);
 		   }
                }
                //printf("Received byte: %d\n",tot);
-               if (b < 0) error("\n Receiving error\n");
+               if (b < 0) printf("\n------ Receiving error------\n");
                fclose(fp);
            } else {
                error("\n File open error\n");
@@ -387,16 +409,13 @@ void *fetch_server_info_thread(void *ptr) {
     float prev_pred = 0;
     float curr_pred = 0;
 #endif
-    pthread_mutex_lock(&lock_server_init);
     int server_socket = server_socket_init(idx);
-    pthread_mutex_unlock(&lock_server_init);
-
 
     fetch_req state_local = FETCH_INFO;
     while(1) {
         switch(state_local) {
             case FETCH_INFO:
-                sleep(1);
+	        usleep(500*1000);
                 pthread_mutex_lock(&lock_server);
 	        server_send(FETCH_INFO, server_socket);
 #if 0
@@ -420,6 +439,7 @@ void *fetch_server_info_thread(void *ptr) {
                 system("cp inffile1_server.jpg inffile2_server.jpg");
                 pthread_mutex_unlock(&lock_server_file);
                 pthread_mutex_unlock(&lock_server);
+		printf("received data from client id: %d\n", idx);
                 break;
             default:
                 printf("Invalid state\n");
@@ -447,7 +467,8 @@ void client_socket_init(void) {
     serv_addr.sin_port = htons(CLIENT_SERVER_PORT); 
        
     // Convert IPv4 and IPv6 addresses from text to binary form 
-    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)  
+    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
+    //if(inet_pton(AF_INET, "192.168.0.1", &serv_addr.sin_addr)<=0)
     { 
         printf("\nInvalid address/ Address not supported \n"); 
 	assert(0);
@@ -499,7 +520,7 @@ fetch_req client_recv(void) {
     sock_data buffer;
     int ret = 0;
 
-    ret = read(client_socket , &buffer, sizeof(buffer));
+    ret = recv(client_socket, &buffer, sizeof(buffer), MSG_WAITALL);
     assert(ret > 0);
 
     if(buffer.id == 'D') {
@@ -557,24 +578,6 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     pthread_t detect_thread;
     pthread_t fetch_thread;
 #endif
-#ifdef EDGE_SERVER
-    pthread_t infinfo_server_thread[CLIENT_NUM_DEVICES];
-    if (pthread_mutex_init(&lock_server, NULL) != 0) error("\n mutex init has failed\n");
-    if (pthread_mutex_init(&lock_server_init, NULL) != 0) error("\n mutex init has failed\n");
-    if (pthread_mutex_init(&lock_server_file, NULL) != 0) error("\n mutex init has failed\n");
-    for (cnt = 0; cnt < CLIENT_NUM_DEVICES; cnt++) {
-        if(pthread_create(&infinfo_server_thread[cnt], 0, \
-				fetch_server_info_thread, (void *)cnt))error("\n Thread creation failed\n");
-        sleep(1);
-    }
-#endif
-
-#ifdef EDGE_DEVICE
-    pthread_t infinfo_client_thread;
-    if (pthread_mutex_init(&lock_client, NULL) != 0) error("\n mutex init has failed\n");
-    if(pthread_create(&infinfo_client_thread, 0, fetch_client_info_thread, 0))error("\n Thread creation failed\n");
-#endif
-
     srand(2222222);
 
     int i;
@@ -619,15 +622,35 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 #endif
     demo_time = what_time_is_it_now();
 
+#ifdef EDGE_SERVER
+    pthread_t infinfo_server_thread[CLIENT_NUM_DEVICES];
+    if (pthread_mutex_init(&lock_server, NULL) != 0) error("\n mutex init has failed\n");
+    if (pthread_mutex_init(&lock_server_init, NULL) != 0) error("\n mutex init has failed\n");
+    if (pthread_mutex_init(&lock_server_file, NULL) != 0) error("\n mutex init has failed\n");
+    for (cnt = 0; cnt < CLIENT_NUM_DEVICES; cnt++) {
+        if(pthread_create(&infinfo_server_thread[cnt], 0, \
+				fetch_server_info_thread, (void *)cnt))error("\n Thread creation failed\n");
+    }
+#endif
+
+#ifdef EDGE_DEVICE
+    pthread_t infinfo_client_thread;
+    if (pthread_mutex_init(&lock_client, NULL) != 0) error("\n mutex init has failed\n");
+    if(pthread_create(&infinfo_client_thread, 0, fetch_client_info_thread, 0))error("\n Thread creation failed\n");
+#endif
+
     while(!demo_done){
         buff_index = (buff_index + 1) %3;
 #if 0
         if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
         if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
 #endif
-#ifndef EDGE_SERVER
+#if (!defined(EDGE_SERVER) && defined(EDGE_DEVICE))
         for(cnt = 0; cnt < 50; cnt++)
             fetch_in_thread(0);
+#endif
+#ifdef EDGE_SERVER
+	usleep(500*1000);
 #endif
         fetch_in_thread(0);
         detect_in_thread(0);
