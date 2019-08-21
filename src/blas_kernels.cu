@@ -787,11 +787,26 @@ extern "C" void softmax_x_ent_gpu(int n, float *pred, float *truth, float *delta
 __global__ void logistic_x_ent_kernel(int n, float *pred, float *truth, float *delta, float *error)
 {
     int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
+    float gamma = 2.0;
+    float alpha = 0.5;
+
     if(i < n){
         float t = truth[i];
         float p = pred[i];
+#if 0
         error[i] = -t*log(p+.0000001) - (1-t)*log(1-p+.0000001);
         delta[i] = t-p;
+#else
+        //https://gombru.github.io/2018/05/23/cross_entropy_loss/
+        if(t == 1.0f) {
+            p = p + .0000001;
+            delta[i] = -powf((1 - p), gamma) * ((gamma * p * logf(p)) + p - 1) * alpha;
+        } else {
+            p = (1 - p + .0000001);
+            delta[i] = powf((1 - p), gamma) * ((gamma * p * logf(p)) + p - 1) * alpha;
+        }
+        error[i] = -powf((1 - p), gamma) * logf(p) * alpha;
+#endif
     }
 }
 

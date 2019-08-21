@@ -24,6 +24,7 @@
 #include "reorg_layer.h"
 #include "avgpool_layer.h"
 #include "cost_layer.h"
+#include "logistic_layer.h"
 #include "softmax_layer.h"
 #include "dropout_layer.h"
 #include "route_layer.h"
@@ -397,6 +398,8 @@ int resize_network(network *net, int w, int h)
             resize_normalization_layer(&l, w, h);
         }else if(l.type == COST){
             resize_cost_layer(&l, inputs);
+        }else if(l.type == LOGXENT){
+            resize_logistic_layer(&l, inputs);
         }else{
             error("Cannot resize this type of layer");
         }
@@ -406,7 +409,7 @@ int resize_network(network *net, int w, int h)
         net->layers[i] = l;
         w = l.out_w;
         h = l.out_h;
-        if(l.type == AVGPOOL) break;
+//        if(l.type == AVGPOOL) break;
     }
     layer out = get_network_output_layer(net);
     net->inputs = net->layers[0].inputs;

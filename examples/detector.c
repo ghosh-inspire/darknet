@@ -1,7 +1,11 @@
 #include "darknet.h"
+#include <assert.h>
+#include <libgen.h>
+
 
 static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90};
 
+static int voc_ids[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19};
 
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear)
 {
@@ -75,7 +79,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     double time;
     //while(i*imgs < N*120){
     while(get_current_batch(net) < net->max_batches){
-#if 0
+#if 1
     int count = 0;
         if(l.random && count++%10 == 0){
             printf("Resizing\n");
@@ -145,14 +149,17 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         i = get_current_batch(net);
         printf("%ld: %f, %f avg, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), what_time_is_it_now()-time, i*imgs);
-        if(i%100==0){
+        if(i%1000==0){
 #ifdef GPU
             if(ngpus != 1) sync_nets(nets, ngpus, 0);
 #endif
             char buff[256];
             sprintf(buff, "%s/%s.backup", backup_directory, base);
             save_weights(net, buff);
+            sprintf(buff, "%s/%s_%d.weights", backup_directory, base, i);
+            save_weights(net, buff);
         }
+#if 0
         if(i%10000==0 || (i < 1000 && i%100 == 0)){
 #ifdef GPU
             if(ngpus != 1) sync_nets(nets, ngpus, 0);
@@ -161,6 +168,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
             sprintf(buff, "%s/%s_%d.weights", backup_directory, base, i);
             save_weights(net, buff);
         }
+#endif
         free_data(train);
     }
 #ifdef GPU
@@ -178,6 +186,45 @@ static int get_coco_image_id(char *filename)
     char *c = strrchr(filename, '_');
     if(c) p = c;
     return atoi(p+1);
+}
+
+static void print_voc(FILE *fp, char *image_path, detection *dets, int num_boxes, int classes, int w, int h, char **names)
+{
+    int i, j;
+    FILE *fpnew;
+    char filename[1024] = {'\0'};
+
+
+    sprintf(filename, "results-new/%s", basename(image_path));
+    char *p = strrchr(filename, '.');
+    p[1] = 't';
+    p[2] = 'x';
+    p[3] = 't';
+    fpnew = fopen(filename, "w+");
+
+    for(i = 0; i < num_boxes; ++i){
+        float xmin = dets[i].bbox.x - dets[i].bbox.w/2.;
+        float xmax = dets[i].bbox.x + dets[i].bbox.w/2.;
+        float ymin = dets[i].bbox.y - dets[i].bbox.h/2.;
+        float ymax = dets[i].bbox.y + dets[i].bbox.h/2.;
+
+        if (xmin < 0) xmin = 0;
+        if (ymin < 0) ymin = 0;
+        if (xmax > w) xmax = w;
+        if (ymax > h) ymax = h;
+
+        float bx = xmin;
+        float by = ymin;
+        float bw = xmax - xmin;
+        float bh = ymax - ymin;
+
+        for(j = 0; j < classes; ++j){
+            if (dets[i].prob[j]) {
+                   fprintf(fpnew, "%s %f %0.0f %0.0f %0.0f %0.0f\n", names[voc_ids[j]], dets[i].prob[j], bx, by, bx+bw, by+bh);
+           }
+        }
+    }
+    fclose(fpnew);
 }
 
 static void print_cocos(FILE *fp, char *image_path, detection *dets, int num_boxes, int classes, int w, int h)
@@ -360,6 +407,7 @@ void validate_detector_flip(char *datacfg, char *cfgfile, char *weightfile, char
                 print_imagenet_detections(fp, i+t-nthreads+1, dets, num, classes, w, h);
             } else {
                 print_detector_detections(fps, id, dets, num, classes, w, h);
+                print_voc(fp, path, dets, num, classes, w, h, names);
             }
             free_detections(dets, num);
             free(id);
@@ -486,6 +534,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
                 print_imagenet_detections(fp, i+t-nthreads+1, dets, nboxes, classes, w, h);
             } else {
                 print_detector_detections(fps, id, dets, nboxes, classes, w, h);
+                print_voc(fp, path, dets, nboxes, classes, w, h, names);
             }
             free_detections(dets, nboxes);
             free(id);

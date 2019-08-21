@@ -276,11 +276,26 @@ void softmax_x_ent_cpu(int n, float *pred, float *truth, float *delta, float *er
 void logistic_x_ent_cpu(int n, float *pred, float *truth, float *delta, float *error)
 {
     int i;
+    float gamma = 2.0;
+    float alpha = 0.5;
+
     for(i = 0; i < n; ++i){
         float t = truth[i];
         float p = pred[i];
-        error[i] = -t*log(p) - (1-t)*log(1-p);
+#if 0
+        error[i] = -t*log(p+.0000001) - (1-t)*log(1-p+.0000001);
         delta[i] = t-p;
+#else
+        //https://gombru.github.io/2018/05/23/cross_entropy_loss/
+        if(t == 1.0f) {
+            p = p + .0000001;
+            delta[i] = -powf((1 - p), gamma) * ((gamma * p * logf(p)) + p - 1) * alpha;
+        } else {
+            p = (1 - p + .0000001);
+            delta[i] = powf((1 - p), gamma) * ((gamma * p * logf(p)) + p - 1) * alpha;
+        }
+        error[i] = -powf((1 - p), gamma) * logf(p) * alpha;
+#endif
     }
 }
 

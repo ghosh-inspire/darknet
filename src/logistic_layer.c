@@ -69,3 +69,17 @@ void backward_logistic_layer_gpu(const layer l, network net)
 }
 
 #endif
+
+void resize_logistic_layer(layer *l, int inputs)
+{
+    l->inputs = inputs;
+    l->outputs = inputs;
+    l->delta = realloc(l->delta, inputs*l->batch*sizeof(float));
+    l->output = realloc(l->output, inputs*l->batch*sizeof(float));
+#ifdef GPU
+    cuda_free(l->delta_gpu);
+    cuda_free(l->output_gpu);
+    l->delta_gpu = cuda_make_array(l->delta, inputs*l->batch);
+    l->output_gpu = cuda_make_array(l->output, inputs*l->batch);
+#endif
+}
