@@ -96,7 +96,7 @@ detection *avg_predictions(network *net, int *nboxes)
 #define CLIENT_NUM_DEVICES (3)
 #define CLIENT_SERVER_PORT (65530)
 #define IMAGE_DATA_LEN (1024)
-#define PREDICTION_THRESHOLD (20)
+#define PREDICTION_THRESHOLD (40)
 typedef struct data_t {
     int len;
     float pred_data[TOP_N_PREDICTIONS];
@@ -329,6 +329,7 @@ float server_recv(fetch_req state_local, int server_socket) {
     int i = 0;
     float pred = 0.0;
     FILE* fp = NULL;
+    int count = 0;
 
     switch(state_local) {
        case FETCH_INFO:
@@ -336,10 +337,14 @@ float server_recv(fetch_req state_local, int server_socket) {
            assert(ret > 0);
            if (buffer.id != 'I') assert(0);
 
+	   count = 0;
 	   for (i = 0; i < TOP_N_PREDICTIONS; i++) {
                pred += buffer.pred_data[i];
+	       if(buffer.pred_data[i])
+		       count++;
 	   }
-	   pred /= TOP_N_PREDICTIONS;
+	   if(count)
+	       pred /= count;
 #if 0
            printf("pred: %5.2f%%\n", buffer.pred_data[0] * 100);
            printf("pred: %5.2f%%\n", buffer.pred_data[1] * 100);
