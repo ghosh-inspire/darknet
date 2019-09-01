@@ -208,7 +208,17 @@ void *fetch_in_thread(void *ptr)
 #endif
     free_image(buff[buff_index]);
 #ifdef EDGE_DEVICE
+#if 1
     buff[buff_index] = get_image_from_stream(cap);
+#else
+    static int count = 1;
+    char mvmcname[300] = {'\0'};
+    sprintf(mvmcname, "../dataset/mvmc/multiclass_ground_truth_images/c0/00000%03d.jpg", count);
+    buff[buff_index] = load_image_color(mvmcname, 0, 0);
+    count++;
+    if(count > 242)
+	    count = 1;
+#endif
 #else
     pthread_mutex_lock(&lock_server_file);
     buff[buff_index] = load_image_color("inffile2_server.jpg", 0, 0);
@@ -606,7 +616,12 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 
 
 #ifdef EDGE_DEVICE
+#if 1
     buff[0] = get_image_from_stream(cap);
+#else
+    char mvmcname[300] = "../dataset/mvmc/multiclass_ground_truth_images/c0/00000001.jpg";
+    buff[0] = load_image_color(mvmcname, 0, 0);
+#endif
 #else
     pthread_mutex_lock(&lock_server_file);
     buff[0] = load_image_color("inffile2_server.jpg", 0, 0);
