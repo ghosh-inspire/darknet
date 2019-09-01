@@ -1,0 +1,6 @@
+classes=10
+train  = /home/subhasish/soton/dataset/cifar/train.list
+valid  = /home/subhasish/soton/dataset/cifar/test.list
+labels = /home/subhasish/soton/dataset/cifar/labels.txt
+backup = backup/
+top=2
